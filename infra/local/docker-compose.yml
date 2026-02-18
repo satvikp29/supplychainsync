@@ -19,16 +19,27 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
 
-      # Listeners
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092"
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
 
-      # Single-node dev defaults
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_MIN_INSYNC_REPLICAS: 1
 
-      # Auto topic creation (dev only)
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
+  postgres:
+    image: postgres:16
+    container_name: scs-postgres
+    environment:
+      POSTGRES_USER: scs
+      POSTGRES_PASSWORD: scs_password
+      POSTGRES_DB: inventorydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
