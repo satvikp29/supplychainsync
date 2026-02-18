@@ -6,8 +6,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class ShipmentEventsListener {
 
+    private final ShipmentEventRepository repo;
+
+    public ShipmentEventsListener(ShipmentEventRepository repo) {
+        this.repo = repo;
+    }
+
     @KafkaListener(topics = "shipment.events", groupId = "inventory-service")
     public void onMessage(String message) {
-        System.out.println("[inventory-service] received: " + message);
+        repo.save(new ShipmentEventEntity(message));
+        System.out.println("[inventory-service] saved event: " + message);
     }
 }
