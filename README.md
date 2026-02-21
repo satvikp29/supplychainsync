@@ -1,123 +1,145 @@
 # SupplyChainSync
 
-Enterprise-grade Java microservices project using **Spring Boot**, **Kafka**, **Kubernetes**, **AWS**, **Terraform**, **GitHub Actions CI/CD**, observability (**Prometheus** / **Grafana**), and **JWT** auth.
+Enterprise Java microservices: **Spring Boot**, **Kafka**, **Kubernetes**, **AWS**, **Terraform**, **GitHub Actions**, **Prometheus/Grafana**, **JWT auth**.
 
-## Architecture
+---
 
-- **shipment-service** (port 8082): Publishes shipment events to Kafka; exposes JWT token endpoint and protected API.
-- **inventory-service** (port 8081): Consumes shipment events from Kafka, persists to PostgreSQL; exposes protected REST API.
-- **Kafka**: Event streaming between services.
-- **PostgreSQL**: Persistence for inventory/shipment events.
-- **Prometheus** + **Grafana**: Metrics and dashboards.
+## Try it (5 minutes)
 
-## Prerequisites
+**Prerequisites:** Docker, Java 21, Maven
 
-- Java 21, Maven 3.9+
-- Docker & Docker Compose (for local stack)
-- (Optional) kubectl, Terraform, AWS CLI for K8s and AWS
+### 1. Run tests (optional)
 
-## Quick start (local)
+```bash
+cd services/inventory-service && mvn test
+cd ../shipment-service && mvn test
+```
 
-1. **Start infrastructure and services:**
+You should see `BUILD SUCCESS` for both.
 
-   ```bash
-   cd infra/local
-   docker compose -f docker-compose.yml -f docker-compose.services.yml up -d
-   ```
+### 2. Start everything
 
-2. **Get a JWT and call APIs:**
+```bash
+cd infra/local
+docker compose -f docker-compose.yml -f docker-compose.services.yml up -d
+```
 
-   ```bash
-   # Get token (no auth required for /auth/token)
-   TOKEN=$(curl -s -X POST http://localhost:8082/auth/token \
-     -H "Content-Type: application/json" \
-     -d '{"username":"demo"}' | jq -r '.access_token')
+You should see 7 containers start. **Wait ~45 seconds** for the apps to be ready.
 
-   # Call protected shipment endpoint
-   curl -H "Authorization: Bearer $TOKEN" "http://localhost:8082/publish?msg=Order123"
+### 3. Get a token
 
-   # Call protected inventory events endpoint
-   curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/events"
-   ```
+```bash
+curl -s -X POST http://localhost:8082/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"username":"demo"}'
+```
 
-3. **Health and metrics (no JWT):**
+**Expected:** JSON like `{"access_token":"eyJ...","token_type":"Bearer"}`. Copy the `access_token` value (the long string).
 
-   - Shipment: http://localhost:8082/health, http://localhost:8082/actuator/prometheus  
-   - Inventory: http://localhost:8081/health, http://localhost:8081/actuator/prometheus  
+> **404?** Rebuild the image: `cd ../../services/shipment-service && mvn package -DskipTests`, then from `infra/local` run `docker compose -f docker-compose.yml -f docker-compose.services.yml build shipment-service --no-cache && docker compose -f docker-compose.yml -f docker-compose.services.yml up -d shipment-service`
 
-4. **Observability:**
+### 4. Publish an event (replace `YOUR_TOKEN` with your token)
 
-   - Prometheus: http://localhost:9090  
-   - Grafana: http://localhost:3000 (admin / admin); add Prometheus data source `http://prometheus:9090`.
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" "http://localhost:8082/publish?msg=Order123"
+```
 
-## JWT auth
+**Expected:** `Published: Order123`
 
-- **Issue token:** `POST /auth/token` on shipment-service (body optional: `{"username":"..."}`). Returns `{"access_token":"...", "token_type":"Bearer"}`.
-- **Use token:** `Authorization: Bearer <token>` on protected endpoints (`/publish`, `/events`).
-- **Secret:** Set `JWT_SECRET` (min 256 bits for HS256) in production; default is a dev-only value in config.
+### 5. Read events from inventory
 
-## Running services only (no Docker)
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" "http://localhost:8081/events"
+```
 
-1. Start Kafka and Postgres (e.g. `docker compose -f docker-compose.yml up -d` in `infra/local`).
-2. Run from repo root:
+**Expected:** JSON array like `[{"id":1,"message":"Order123","receivedAt":"..."}]`
 
-   ```bash
-   cd services/inventory-service && mvn spring-boot:run
-   cd services/shipment-service && mvn spring-boot:run
-   ```
+### 6. Check observability (optional)
 
-## Kubernetes
+- **Prometheus:** http://localhost:9090 → Status → Targets (both services should be UP)
+- **Grafana:** http://localhost:3000 (login: `admin` / `admin`) → Add data source → Prometheus → URL: `http://prometheus:9090` → Save & Test
 
-1. Build and load images (or use your registry):
+---
 
-   ```bash
-   cd services/inventory-service && mvn package && docker build -t inventory-service:latest .
-   cd services/shipment-service && mvn package && docker build -t shipment-service:latest .
-   ```
+## What this project does
 
-2. Create namespace and secrets (override default secret in prod):
+1. **shipment-service** (port 8082) – publishes shipment events to Kafka, issues JWT tokens
+2. **inventory-service** (port 8081) – listens to Kafka, stores events in PostgreSQL
+3. When you publish via shipment-service → it goes to Kafka → inventory-service saves it → you can query it
 
-   ```bash
-   kubectl apply -f infra/kubernetes/namespace.yaml
-   kubectl apply -f infra/kubernetes/secret.yaml
-   kubectl apply -f infra/kubernetes/configmap.yaml
-   ```
+**Flow:** Publish event → Kafka → Inventory stores it → Query events
 
-3. Deploy (ensure Kafka and Postgres are available in-cluster or via external endpoints; update ConfigMap/Secret as needed):
+---
 
-   ```bash
-   kubectl apply -f infra/kubernetes/inventory-service.yaml
-   kubectl apply -f infra/kubernetes/shipment-service.yaml
-   kubectl apply -f infra/kubernetes/prometheus.yaml
-   kubectl apply -f infra/kubernetes/grafana.yaml
-   ```
+## Endpoints
 
-## AWS (Terraform)
+| Endpoint | Auth? | Description |
+|----------|-------|-------------|
+| `POST /auth/token` | No | Get JWT (body: `{"username":"demo"}`) |
+| `GET /publish?msg=X` | Yes | Publish event to Kafka |
+| `GET /events` | Yes | List stored events |
+| `GET /health` | No | Health check |
+| `GET /actuator/prometheus` | No | Metrics for Prometheus |
 
-- **ECR:** Terraform in `infra/terraform` creates ECR repositories for both services. See `infra/terraform/README.md`.
-- **Usage:** `terraform init && terraform apply` (after configuring AWS credentials and optional `terraform.tfvars`).
+---
 
-## CI/CD (GitHub Actions)
+## Stop everything
 
-- **CI** (`.github/workflows/ci.yml`): On push/PR to `main` or `develop`, builds and runs tests for both services (Maven, JDK 21).
-- **CD** (`.github/workflows/cd.yml`): On push to `main`, builds JARs, builds Docker images, and pushes to Amazon ECR.
-  - **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (and ensure ECR repos exist, e.g. via Terraform).
-  - Optional: use OIDC with `AWS_ROLE_ARN` instead of access keys.
+```bash
+cd infra/local
+docker compose -f docker-compose.yml -f docker-compose.services.yml down
+```
+
+---
+
+## More options
+
+### Run without Docker (Kafka + Postgres still in Docker)
+
+```bash
+cd infra/local && docker compose -f docker-compose.yml up -d
+cd ../../services/inventory-service && mvn spring-boot:run   # terminal 1
+cd services/shipment-service && mvn spring-boot:run          # terminal 2
+```
+
+### Kubernetes
+
+```bash
+kubectl apply -f infra/kubernetes/namespace.yaml
+kubectl apply -f infra/kubernetes/secret.yaml
+kubectl apply -f infra/kubernetes/configmap.yaml
+kubectl apply -f infra/kubernetes/inventory-service.yaml
+kubectl apply -f infra/kubernetes/shipment-service.yaml
+kubectl apply -f infra/kubernetes/prometheus.yaml
+kubectl apply -f infra/kubernetes/grafana.yaml
+```
+
+*(Requires Kafka and Postgres in-cluster or via ConfigMap)*
+
+### AWS (Terraform)
+
+```bash
+cd infra/terraform && terraform init && terraform apply
+```
+
+Creates ECR repositories for both services.
+
+### CI/CD
+
+- **CI:** Push to `main`/`develop` → GitHub Actions builds and tests both services
+- **CD:** Push to `main` → Builds Docker images and pushes to ECR (needs `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` secrets)
+
+---
 
 ## Project layout
 
 ```
-├── .github/workflows/     # CI and CD
-├── infra/
-│   ├── local/             # Docker Compose (Kafka, Postgres, apps, Prometheus, Grafana)
-│   ├── kubernetes/        # K8s manifests (namespace, configmap, secret, deployments, services)
-│   └── terraform/         # AWS ECR and variables
+├── .github/workflows/   # CI and CD
+├── infra/local/        # Docker Compose (Kafka, Postgres, apps, Prometheus, Grafana)
+├── infra/kubernetes/   # K8s manifests
+├── infra/terraform/    # AWS ECR
 ├── services/
-│   ├── inventory-service/ # Spring Boot, Kafka consumer, JPA, JWT, Prometheus
-│   └── shipment-service/  # Spring Boot, Kafka producer, JWT issuer, Prometheus
+│   ├── inventory-service/
+│   └── shipment-service/
 └── README.md
 ```
-
-## License
-
-Use as needed for your organization.
