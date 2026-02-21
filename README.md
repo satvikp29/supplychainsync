@@ -1,6 +1,8 @@
 # SupplyChainSync
 
-Enterprise Java microservices: **Spring Boot**, **Kafka**, **Kubernetes**, **AWS**, **Terraform**, **GitHub Actions**, **Prometheus/Grafana**, **JWT auth**.
+**When you ship something, your inventory updates automatically.** Two small services talk to each other: one records shipments, the other keeps track of what’s in stock. Built for learning and demonstrating modern cloud architecture.
+
+*Uses: Java/Spring Boot, Kafka (event streaming), Kubernetes, AWS, Terraform, GitHub Actions, Prometheus/Grafana, JWT security.*
 
 ---
 
@@ -63,11 +65,13 @@ curl -H "Authorization: Bearer YOUR_TOKEN" "http://localhost:8081/events"
 
 ## What this project does
 
-1. **shipment-service** (port 8082) – publishes shipment events to Kafka, issues JWT tokens
-2. **inventory-service** (port 8081) – listens to Kafka, stores events in PostgreSQL
-3. When you publish via shipment-service → it goes to Kafka → inventory-service saves it → you can query it
+When a shipment happens, the system records it and updates inventory in real time. No manual sync needed.
 
-**Flow:** Publish event → Kafka → Inventory stores it → Query events
+1. **Shipment service** – You tell it “Order #123 shipped.” It broadcasts that to the system.
+2. **Inventory service** – It listens for those announcements and updates the stock list.
+3. You can query the inventory service anytime to see what’s been recorded.
+
+**Simple flow:** Record a shipment → Message gets sent → Inventory updates → You can view the history
 
 ---
 
