@@ -1,0 +1,8 @@
+aws_region  = "us-east-1"
+environment = "dev"
+
+# For remote state (uncomment backend in main.tf and set):
+# bucket         = "your-terraform-state-bucket"
+# key            = "supplychainsync/terraform.tfstate"
+# region         = "us-east-1"
+# dynamodb_table = "terraform-lock"
